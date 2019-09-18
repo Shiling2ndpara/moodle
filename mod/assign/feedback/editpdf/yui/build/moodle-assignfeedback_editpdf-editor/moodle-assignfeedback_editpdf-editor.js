@@ -732,6 +732,7 @@ Y.extend(ANNOTATION, Y.Base, {
 
             drawingregion.append(deletelink);
             deletelink.setData('annotation', this);
+            deletelink.setStyle('zIndex', '200');
 
             deletelink.on('click', this.remove, this);
             deletelink.on('key', this.remove, 'space,enter', this);
@@ -1575,15 +1576,14 @@ Y.extend(ANNOTATIONSTAMP, M.assignfeedback_editpdf.annotation, {
 
         position = this.editor.get_window_coordinates(new M.assignfeedback_editpdf.point(this.x, this.y));
         node = Y.Node.create('<div/>');
-        node.addClass('annotation');
-        node.addClass('stamp');
         node.setStyles({
             'position': 'absolute',
             'display': 'inline-block',
             'backgroundImage': 'url(' + this.editor.get_stamp_image_url(this.path) + ')',
             'width': (this.endx - this.x),
             'height': (this.endy - this.y),
-            'backgroundSize': '100% 100%'
+            'backgroundSize': '100% 100%',
+            'zIndex': 50
         });
 
         drawingcanvas.append(node);
@@ -1623,15 +1623,14 @@ Y.extend(ANNOTATIONSTAMP, M.assignfeedback_editpdf.annotation, {
         position = this.editor.get_window_coordinates(new M.assignfeedback_editpdf.point(bounds.x, bounds.y));
 
         node = Y.Node.create('<div/>');
-        node.addClass('annotation');
-        node.addClass('stamp');
         node.setStyles({
             'position': 'absolute',
             'display': 'inline-block',
             'backgroundImage': 'url(' + this.editor.get_stamp_image_url(edit.stamp) + ')',
             'width': bounds.width,
             'height': bounds.height,
-            'backgroundSize': '100% 100%'
+            'backgroundSize': '100% 100%',
+            'zIndex': 50
         });
 
         drawingregion.append(node);
@@ -3521,6 +3520,22 @@ EDITOR.prototype = {
     editingcomment: false,
 
     /**
+     * Prevent simulated scroll
+     * @property simulatescroll
+     * @type Boolean
+     * @protected
+     */
+    simulatescroll: false,
+
+    /**
+     * Extreme scroll position
+     * @property scrollend
+     * @type int
+     * @protected
+     */
+    scrollend: 0,
+
+    /**
      * Should inactive comments be collapsed?
      *
      * @property collapsecomments
@@ -3664,7 +3679,7 @@ EDITOR.prototype = {
      * @method open_in_panel
      */
     open_in_panel: function(panel) {
-        var drawingcanvas;
+        var drawingcanvas, drawingregion;
 
         this.panel = panel;
         panel.append(this.get('body'));
@@ -3674,6 +3689,9 @@ EDITOR.prototype = {
 
         drawingcanvas = this.get_dialogue_element(SELECTOR.DRAWINGCANVAS);
         this.graphic = new Y.Graphic({render: drawingcanvas});
+
+        drawingregion = this.get_dialogue_element(SELECTOR.DRAWINGREGION);
+        drawingregion.on('scroll', this.simulate_scroll, this);
 
         if (!this.get('readonly')) {
             drawingcanvas.on('gesturemovestart', this.edit_start, null, this);
@@ -3691,7 +3709,7 @@ EDITOR.prototype = {
      * @method link_handler
      */
     link_handler: function(e) {
-        var drawingcanvas;
+        var drawingcanvas, drawingregion;
         var resize = true;
         e.preventDefault();
 
@@ -3713,6 +3731,9 @@ EDITOR.prototype = {
 
             drawingcanvas = this.get_dialogue_element(SELECTOR.DRAWINGCANVAS);
             this.graphic = new Y.Graphic({render: drawingcanvas});
+
+            drawingregion = this.get_dialogue_element(SELECTOR.DRAWINGREGION);
+            drawingregion.on('scroll', this.simulate_scroll, this);
 
             if (!this.get('readonly')) {
                 drawingcanvas.on('gesturemovestart', this.edit_start, null, this);
@@ -4737,6 +4758,7 @@ EDITOR.prototype = {
      */
     previous_page: function(e) {
         e.preventDefault();
+        this.simulatescroll = false;
         this.currentpage--;
         if (this.currentpage < 0) {
             this.currentpage = 0;
@@ -4752,12 +4774,46 @@ EDITOR.prototype = {
      */
     next_page: function(e) {
         e.preventDefault();
+        this.simulatescroll = false;
         this.currentpage++;
         if (this.currentpage >= this.pages.length) {
             this.currentpage = this.pages.length - 1;
         }
         this.clear_warnings(false);
         this.change_page();
+    },
+
+    /**
+     * Simulate the transition to the next (previous) page
+     * when the canvas for drawing scrolls to extreme positions
+     * @protected
+     * @method simulate_scroll
+     */
+    simulate_scroll: function () {
+        var drawingregion, y, previousbutton, nextbutton;
+
+        drawingregion = this.get_dialogue_element(SELECTOR.DRAWINGREGION);
+        y = parseInt(drawingregion.get('scrollTop'), 10);
+
+        if (y > 0) {
+            this.simulatescroll = true;
+        }
+
+        // go to next page if it exists
+        if (drawingregion.get('scrollHeight') - drawingregion.get('scrollTop') == drawingregion.get('clientHeight')
+            && this.currentpage < this.pages.length -1) {
+            this.scrollend = y;
+            nextbutton = this.get_dialogue_element(SELECTOR.NEXTBUTTON);
+            nextbutton.simulate("click");
+            drawingregion.set('scrollTop', 1);
+        }
+
+        // go to previous page if it exists
+        if (y == 0 && this.simulatescroll == true && this.currentpage > 0) {
+            previousbutton = this.get_dialogue_element(SELECTOR.PREVIOUSBUTTON);
+            previousbutton.simulate("click");
+            drawingregion.set('scrollTop', this.scrollend - 1);
+        }
     },
 
     /**
